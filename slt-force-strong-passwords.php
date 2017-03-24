@@ -2,10 +2,10 @@
 /**
  Plugin Name: Force Strong Passwords
  Plugin URI: https://github.com/boogah/Force-Strong-Passwords/
- Description: Forces privileged users to set a strong password.
- Version: 1.7
- Author: Jason Cosper
- Author URI: http://jasoncosper.com/
+ Description: Forces privileged users to set a strong password and renewing them often.
+ Version: 1.7F
+ Author: Jason Cosper, Lauri Kallioniemi
+ Author URI: http://jasoncosper.com/, http://www.frantic.com
  License: GPLv2
  @package force-strong-passwords
  */
@@ -40,6 +40,9 @@ if ( ! function_exists( 'add_action' ) ) {
 
 // Our plugin.
 define( 'FSP_PLUGIN_BASE', __FILE__ );
+
+define( 'FRC_PASSWORD_EXPIRATON_DAYS', 90 );
+define( 'FRC_PASSWORD_EXPIRATON_TIME', 60 * 60 * 24 * FRC_PASSWORD_EXPIRATON_DAYS );
 
 // Allow changing the version number in only one place (the header above).
 $plugin_data = get_file_data( FSP_PLUGIN_BASE, array( 'Version' => 'Version' ) );
@@ -253,3 +256,77 @@ function slt_fsp_password_strength( $i, $f ) {
 	}
 	return $a;
 }
+
+/**
+ * Check if user needs to change password
+ *
+ * @since	1.7f
+ * @param string $redirect_to URL to redirect to.
+ * @param string $request URL the user is coming from.
+ * @param object $user Logged user's data.
+ *
+ * @return string
+ */
+function frc_fsp_login_redirect( $redirect_to, $request, $user ) {
+	$enforce = false;
+	$user_id = isset( $user->ID ) ? $user->ID : false;
+	$roles   = isset( $user->roles ) ? $user->roles: false;
+
+	// Should a strong password be enforced for this user?
+	if ( $user_id ) {
+
+		// User ID specified.
+		$enforce = slt_fsp_enforce_for_user( $user_id );
+	}
+
+	// Should a strong password be enforced for this user?
+
+	if ( $enforce ) {
+		$password_set = intval( get_user_meta( $user_id, 'password_set',true ) );
+ 		if ( $password_set ) {
+			if ( FRC_PASSWORD_EXPIRATON_TIME < current_time("timestamp", 1) - $password_set ) {
+				$key = get_password_reset_key( $user );
+				$user_login = $user->user_login;
+				return network_site_url( "wp-login.php?action=rp&key=$key&login=" . rawurlencode($user_login)."&error=password_expired", 'login' );
+			}
+		} else {
+			update_user_meta( $user_id, 'password_set', current_time( 'timestamp', true ) );
+		}
+	}
+	return $redirect_to;
+}
+
+/**
+ * When user saves a new password, we give new expiration time
+ *
+ * @since	1.7f
+ * @param WP_User $user logged in user.
+ * @param string $new_pass new password user filled in.
+ */
+function frc_password_reset( $user, $new_pass ) {
+	update_user_meta( $user->ID, 'password_set', current_time( 'timestamp', true) );
+}
+
+/**
+ * Print an error message to be shown in password changing screen
+ */
+function frc_password_expiration_warning(){
+	global $errors;
+	if ( 'password_expired' == $_GET['error'] && !$errors->get_error_data( 'pass' ) ) {
+		$errors->add( 'password_expired', apply_filters( 'frc_fsp_error_message', sprintf( __( 'Your password is older than %s days and therefore must be changed', 'slt-force-strong-passwords' ), FRC_PASSWORD_EXPIRATON_DAYS ) ) );
+	}
+}
+
+/**
+ * Remove default info message in password changing screen
+ */
+function frc_remove_login_message( $message ) {
+	if ( 'password_expired' == $_GET['error'] ) {
+		return null;
+	}
+}
+
+add_filter( 'login_redirect', 'frc_fsp_login_redirect', 10, 3 );
+add_filter( 'login_message',  'frc_remove_login_message', 10, 1);
+add_action( 'password_reset', 'frc_password_reset', 10, 2 );
+add_action( 'login_head',     'frc_password_expiration_warning', 10, 2);

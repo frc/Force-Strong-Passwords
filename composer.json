@@ -1,0 +1,8 @@
+{
+    "name": "frc/Force-Strong-Passwords",
+    "description": "Force WordPress administrators to use strong passwords and renew the from time to time",
+    "keywords": ["passwords", "security", "users", "profile"],
+    "homepage": "https://www.frantic.com",
+    "type": "mu-plugin",
+    "license": "GPL-2.0",
+}
